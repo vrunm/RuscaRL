@@ -30,6 +30,7 @@
 
 ## **🔥**Updates
 
+- `[Oct 15, 2025]` 🔧 Added hybrid rule support for reward functions with rule-based and LLM-based verification!
 - `[Sep 26, 2025]` 💻 Released RuscaRL code!
 - `[Aug 23, 2025]` 📝 Released RuscaRL paper on arXiv!
 
@@ -175,6 +176,31 @@ http://localhost:8001/v1,http://localhost:8002/v1,http://localhost:8003/v1,http:
 ```yaml
 custom_reward_function:
   path: health_bench/healthbench_reward_fn.py
+```
+
+#### Hybrid Rule Support
+
+RuscaRL now supports **hybrid rule verification** that combines rule-based and LLM-based evaluation methods:
+
+- **Rule-based verification**: Fast, deterministic verification using predefined functions (e.g., mathematical answer checking, word count validation)
+- **LLM-based verification**: Flexible evaluation using LLM-as-a-Judge for complex criteria
+- **Dynamic switching**: Automatically selects the appropriate verification method based on rubric tags
+
+Key implementation files:
+- `health_bench/healthbench_reward_fn.py`: Main reward function with hybrid rule support
+- `verl/utils/reward_score/rule_fn.py`: Rule-based verification functions registry
+
+Example rubric with rule-based verification:
+```json
+{
+  "criterion": "The answer should be mathematically correct",
+  "points": 10,
+  "tags": {
+    "verifier": "rule",
+    "function": "math_verify",
+    "parameters": {"answer": "42"}
+  }
+}
 ```
 
 ### Graded System Prompt Configuration

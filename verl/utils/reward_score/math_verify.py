@@ -77,8 +77,10 @@ def compute_score(model_output: str, ground_truth: str, timeout_score: float = 0
     try:
         ret_score, _ = verify_func([ground_truth_boxed], [model_output])
     except Exception:
+        print(f"Exception")
         pass
     except TimeoutException:
+        print(f"TimeoutException")
         ret_score = timeout_score
 
     return ret_score

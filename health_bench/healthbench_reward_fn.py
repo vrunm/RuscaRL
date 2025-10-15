@@ -10,12 +10,8 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import importlib
 
-# Import math_verify module
-try:
-    from verl.utils.reward_score.math_verify import compute_score as math_verify_compute_score
-except ImportError:
-    print("Warning: math_verify module not found. Rule-based verification will be disabled.")
-    math_verify_compute_score = None
+# Import verification function module
+from verl.utils.reward_score.rule_fn import get_verification_function, VERIFICATION_FUNCTIONS
 
 # Concurrent workers control variable for single URL
 MAX_CONCURRENT_WORKERS = 512
@@ -23,45 +19,39 @@ MAX_CONCURRENT_WORKERS = 512
 # Load .env file
 load_dotenv()
 
-def math_verify(model_response: str, parameter: str) -> bool:
-    """
-    Use math_verify for mathematical answer verification
-    
-    Args:
-        model_response: Model's response
-        parameter: Verification parameter (usually ground truth)
-        
-    Returns:
-        bool: Verification result, True for correct, False for incorrect
-    """
-    if math_verify_compute_score is None:
-        print("math_verify module not available, returning False")
-        return False
-        
-    try:
-        # Use math_verify's compute_score function for verification
-        # This function returns 0.0 or 1.0, we convert it to bool
-        score = math_verify_compute_score(model_response, parameter)
-        return score > 0.5  # Consider > 0.5 as correct
-    except Exception as e:
-        print(f"math_verify verification failed: {e}")
-        return False
+# Verification functions have been moved to verification_functions.py module
 
 @dataclass
 class RubricItem:
     criterion: str
     points: float
-    tags: List[str]
+    tags: Dict[str, Any]
 
     def __str__(self) -> str:
         return self.criterion
 
     @classmethod
     def from_dict(cls, d: dict) -> "RubricItem":
+        tags_data = d.get("tags", [])
+        # If tags is in list format, try to parse as dictionary
+        if isinstance(tags_data, list):
+            tags_dict = {}
+            for tag in tags_data:
+                if isinstance(tag, str) and ":" in tag:
+                    key, value = tag.split(":", 1)
+                    tags_dict[key] = value
+                elif isinstance(tag, str):
+                    # For tags without colon, use the tag itself as key with value True
+                    tags_dict[tag] = True
+            tags_data = tags_dict
+        elif not isinstance(tags_data, dict):
+            # If neither list nor dict, set to empty dict
+            tags_data = {}
+            
         return cls(
             criterion=d["criterion"],
             points=d["points"],
-            tags=d.get("tags", [])
+            tags=tags_data
         )
 
     def to_dict(self) -> dict:
@@ -154,17 +144,15 @@ class VLLMSampler(SamplerBase):
         # Load balancing related variables
         self.current_url_index = 0  # Index for round-robin
         self.url_loads = {}  # Store load information for each URL
-        self.url_weights = {}  # Store weights for each URL
         self.virtual_loads = {}  # Store virtual load for each URL (including allocated requests)
         
         # Initialize load information for each URL
         for url in self.base_urls:
             self.url_loads[url] = {'running': 0, 'waiting': 0, 'total': 0}
-            self.url_weights[url] = 1.0  # Initial weights are equal
             self.virtual_loads[url] = 0  # Initial virtual load is 0
         
         # Perform load statistics once during initialization
-        self._update_loads_and_weights()
+        self._update_loads()
         
         self.model = model or os.getenv("VLLM_MODEL", "8001vllm")
         self.system_message = system_message
@@ -193,7 +181,7 @@ class VLLMSampler(SamplerBase):
 
     def _filter_think_tags(self, text: str) -> str:
         """Remove <think></think> tags and their content"""
-        return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
 
     def _get_url_load(self, url: str) -> dict:
         """Get load information for a single URL"""
@@ -239,8 +227,6 @@ class VLLMSampler(SamplerBase):
     def _reload_urls_from_env(self):
         """Reload URL configuration from environment variables"""
         
-        
-        
         # Reload .env file
         try:
             from dotenv import load_dotenv
@@ -272,15 +258,12 @@ class VLLMSampler(SamplerBase):
             for url in old_urls - new_urls_set:
                 if url in self.url_loads:
                     del self.url_loads[url]
-                if url in self.url_weights:
-                    del self.url_weights[url]
                 if url in self.virtual_loads:
                     del self.virtual_loads[url]
             
             # Add new URLs
             for url in new_urls_set - old_urls:
                 self.url_loads[url] = {'running': 0, 'waiting': 0, 'total': 0}
-                self.url_weights[url] = 1.0
                 self.virtual_loads[url] = 0
             
             # Update URL list
@@ -289,71 +272,28 @@ class VLLMSampler(SamplerBase):
         
         return url_changed
     
-    def _update_loads_and_weights(self):
-        """Update load information for all URLs and recalculate weights"""
+    def _update_loads(self):
+        """Update load information for all URLs"""
         # Get current load for all URLs
-        loads = []
-        available_urls = []
-        
         for url in self.base_urls:
             load_info = self._get_url_load(url)
             self.url_loads[url] = load_info
-            
-            if load_info['available']:
-                loads.append(load_info['total'])
-                available_urls.append(url)
-        
-        if not available_urls:
-            return
-        
-        # Use new weight calculation algorithm
-        if loads:
-            # Calculate average load
-            avg_load = sum(loads) / len(loads)
-            # Calculate double average
-            double_avg = avg_load * 2
-            
-            # Calculate weight for each URL: double average minus specific load value, treat negative as 0
-            raw_weights = []
-            for url in available_urls:
-                current_load = self.url_loads[url]['total']
-                weight = max(0, double_avg - current_load)
-                raw_weights.append(weight)
-            
-            # Normalize weights
-            total_weight = sum(raw_weights)
-            if total_weight > 0:
-                for i, url in enumerate(available_urls):
-                    self.url_weights[url] = raw_weights[i] / total_weight
-            else:
-                # If all weights are 0, distribute evenly
-                for url in available_urls:
-                    self.url_weights[url] = 1.0 / len(available_urls)
-        else:
-            # If no load data, distribute weights evenly
-            for url in available_urls:
-                self.url_weights[url] = 1.0 / len(available_urls)
-        
-        # Set weight to 0 for unavailable URLs
-        for url in self.base_urls:
-            if url not in available_urls:
-                self.url_weights[url] = 0.0
     
     def _get_next_url(self) -> str:
-        """Select URL with lowest load based on fill-the-gap algorithm"""
+        """Select the URL with the lowest load based on fill-the-gap algorithm"""
         # Get all available URLs
         available_urls = [url for url in self.base_urls if self.url_loads[url].get('available', False)]
         
         if not available_urls:
-            # If no available URLs, wait for server recovery
+            # If no URLs are available, wait for server recovery
             while True:
                 # Reload URL configuration from .env
                 self._reload_urls_from_env()
-                    # Re-read environment variables and update URL configuration at the beginning of each batch
-                self._update_loads_and_weights()
+                    # Reload environment variables and update URL configuration at the beginning of each batch
+                self._update_loads()
                 
 
-                # Re-check available URLs
+                # Recheck available URLs
                 available_urls = [url for url in self.base_urls if self.url_loads[url].get('available', False)]
                 
                 if available_urls:
@@ -361,7 +301,7 @@ class VLLMSampler(SamplerBase):
                 
                 time.sleep(10)
         
-        # Find URL with lowest virtual load (fill-the-gap algorithm)
+        # Find the URL with the lowest virtual load (fill-the-gap algorithm)
         min_virtual_load = float('inf')
         selected_url = available_urls[0]
         
@@ -450,15 +390,15 @@ class VLLMSampler(SamplerBase):
                 if current_url and current_url in self.virtual_loads:
                     self.virtual_loads[current_url] = max(0, self.virtual_loads[current_url] - 1)
                 
-                exception_backoff = min(2**trial, 300)  # Max wait time 300 seconds
+                exception_backoff = min(2**trial, 300)  # Maximum wait time 300 seconds
                 print(
-                    f"Request failed (URL: {current_url}), retrying in {exception_backoff} seconds, attempt {trial}",
+                    f"Request failed (URL: {current_url}), retrying attempt {trial} after {exception_backoff} seconds",
                     str(e),
                 )
                 if isinstance(e, requests.exceptions.ConnectionError):
                     print(f"Connection error: Please ensure VLLM service is running at {current_url}")
                     # On connection error, try to reload .env file and update URL configuration
-                    print("Detected connection error, trying to reload .env file and update URL configuration...")
+                    print("Detected connection error, attempting to reload .env file and update URL configuration...")
                     url_changed = self._reload_urls_from_env()
                     if url_changed:
                         print("URL configuration updated, will retry with new URL configuration")
@@ -466,7 +406,7 @@ class VLLMSampler(SamplerBase):
                         print("No change in URL configuration")
                     
                     # Re-detect load status of all servers (like initialization)
-                    self._update_loads_and_weights()
+                    self._update_loads()
                     
                     # Print average load information
                     available_urls = [url for url in self.base_urls if self.url_loads[url].get('available', False)]
@@ -474,7 +414,7 @@ class VLLMSampler(SamplerBase):
                          total_running = sum(self.url_loads[url]['running'] for url in available_urls)
                          total_waiting = sum(self.url_loads[url]['waiting'] for url in available_urls)
                          total_load = sum(self.url_loads[url]['total'] for url in available_urls)
-                         print(f"Average load - Running: {total_running/len(available_urls):.1f}, Waiting: {total_waiting/len(available_urls):.1f}, Total load: {total_load/len(available_urls):.1f}")
+                         print(f"Average load - Running: {total_running/len(available_urls):.1f}, Waiting: {total_waiting/len(available_urls):.1f}, Total: {total_load/len(available_urls):.1f}")
                     
                     print(f"Load detection completed, current available servers: {len(available_urls)}/{len(self.base_urls)}")
                     print("================================\n")
@@ -482,7 +422,7 @@ class VLLMSampler(SamplerBase):
                     print(f"Timeout error: Request exceeded {self.timeout} seconds")
                 time.sleep(exception_backoff)
                 trial += 1
-                # Remove retry limit, implement infinite retry
+                # Remove retry limit to implement infinite retries
 
 GRADER_TEMPLATE = """
 Your job is to look at a conversation and a rubric item, and score the last turn (i.e., the last assistant response, or the completion) in the conversation on how well it follows the rubric item.
@@ -536,7 +476,7 @@ Return just the json object in markdown format. Do not include any other text in
 """.strip()
 
 def parse_json_to_dict(json_string: str) -> dict:
-    """Parse JSON string, handle markdown format"""
+    """Parse JSON string, handling markdown format"""
     original_string = json_string
     
     # Method 1: Original matching approach - Remove markdown-style ```json``` markers if present
@@ -547,55 +487,55 @@ def parse_json_to_dict(json_string: str) -> dict:
     except json.JSONDecodeError as e:
         # JSON parsing failed, but don't print details to avoid log pollution
         pass
-        
-        # Backup method: more lenient approach - extract any content that looks like JSON
-        # New: try to fix double quote escaping issues in JSON
-        try:
-            # Find the first complete JSON object
-            brace_count = 0
-            start_idx = -1
-            for i, char in enumerate(original_string):
-                if char == '{':
-                    if brace_count == 0:
-                        start_idx = i
-                    brace_count += 1
-                elif char == '}':
-                    brace_count -= 1
-                    if brace_count == 0 and start_idx != -1:
-                        json_content = original_string[start_idx:i+1]
+    
+    # Backup method: more lenient approach - extract anything that looks like JSON content
+    # New: try to fix double quote escaping issues in JSON
+    try:
+        # Find the first complete JSON object
+        brace_count = 0
+        start_idx = -1
+        for i, char in enumerate(original_string):
+            if char == '{':
+                if brace_count == 0:
+                    start_idx = i
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0 and start_idx != -1:
+                    json_content = original_string[start_idx:i+1]
+                    
+                    # Try to fix double quote escaping issues
+                    # Find all "explanation": "..." and "criteria_met": ... patterns
+                    def fix_quotes_in_json(json_str):
+                        # Use regular expressions to fix double quotes in explanation field
+                        import re
                         
-                        # Try to fix double quote escaping issues
-                        # Find all "explanation": "..." and "criteria_met": ... patterns
-                        def fix_quotes_in_json(json_str):
-                            # Use regex to fix double quotes in explanation field
-                            import re
-                            
-                            # Match "explanation": "..." part
-                            explanation_pattern = r'("explanation"\s*:\s*")(.*?)("(?:\s*,|\s*}))'
-                            
-                            def fix_explanation(match):
-                                prefix = match.group(1)
-                                content = match.group(2)
-                                suffix = match.group(3)
-                                
-                                # Escape double quotes in content, but preserve already escaped ones
-                                # First replace already escaped double quotes with temporary placeholder
-                                content = content.replace('\\"', '###ESCAPED_QUOTE###')
-                                # Escape unescaped double quotes
-                                content = content.replace('"', '\\"')
-                                # Restore already escaped double quotes
-                                content = content.replace('###ESCAPED_QUOTE###', '\\"')
-                                
-                                return prefix + content + suffix
-                            
-                            fixed_json = re.sub(explanation_pattern, fix_explanation, json_str, flags=re.DOTALL)
-                            return fixed_json
+                        # Match "explanation": "..." part
+                        explanation_pattern = r'("explanation"\s*:\s*")(.*?)("(?:\s*,|\s*}))'
                         
-                        fixed_json = fix_quotes_in_json(json_content)
-                        return json.loads(fixed_json)
-        except Exception as e:
-            # Don't print details to avoid log pollution
-            pass
+                        def fix_explanation(match):
+                            prefix = match.group(1)
+                            content = match.group(2)
+                            suffix = match.group(3)
+                            
+                            # Escape double quotes in content while preserving already escaped ones
+                            # First replace already escaped quotes with temporary placeholder
+                            content = content.replace('\\"', '###ESCAPED_QUOTE###')
+                            # Escape unescaped double quotes
+                            content = content.replace('"', '\\"')
+                            # Restore already escaped quotes
+                            content = content.replace('###ESCAPED_QUOTE###', '\\"')
+                            
+                            return prefix + content + suffix
+                        
+                        fixed_json = re.sub(explanation_pattern, fix_explanation, json_str, flags=re.DOTALL)
+                        return fixed_json
+                    
+                    fixed_json = fix_quotes_in_json(json_content)
+                    return json.loads(fixed_json)
+    except Exception as e:
+        # Don't print detailed information to avoid log pollution
+        pass
         
         # Directly extract values of explanation and criteria_met fields
         try:
@@ -614,14 +554,14 @@ def parse_json_to_dict(json_string: str) -> dict:
                 "explanation": explanation,
                 "criteria_met": criteria_met
             }
-            # Don't print detailed info to avoid log pollution
+            # Don't print detailed information to avoid log pollution
             return result
         except Exception as e:
-            print(f"Field extraction exception: {e}")
+            print(f"Field extraction exception occurred: {e}")
 
         
 
-        print("All JSON parsing methods failed, returning empty dict")
+        print("All JSON parsing methods failed, returning empty dictionary")
         print("="*80)
         return {}
 
@@ -649,14 +589,14 @@ def grade_single_example(
     executor=None,  # New parameter: external thread pool
 ) -> Tuple[float, str, List[Dict]]:
     """Evaluate a single example
-
+    
     Args:
         prompt: Conversation history
         response: Model response
         rubric_items: List of grading criteria
         grader_model: Grading model
         executor: External thread pool for global concurrency control
-
+        
     Returns:
         tuple: (score, detailed explanation, grading results for each criterion)
     """
@@ -666,35 +606,29 @@ def grade_single_example(
     def grade_rubric_item(rubric_item: RubricItem) -> dict:
         # Check if tags contain rule-based verification
         if rubric_item.tags:
-            # Check for verifier:rule tag
-            verifier_rule = any(tag.startswith("verifier:rule") for tag in rubric_item.tags)
-            if verifier_rule:
-                # Look for function and parameters tags
-                function_name = None
-                parameter_value = None
+            # Check if there's a verifier tag with value 'rule'
+            verifier_type = rubric_item.tags.get("verifier")
+            if verifier_type == "rule":
+                # Get function and parameters directly from dictionary
+                function_name = rubric_item.tags.get("function")
+                parameter_value = rubric_item.tags.get("parameters")
                 
-                for tag in rubric_item.tags:
-                    if tag.startswith("function:"):
-                        function_name = tag.split(":", 1)[1]
-                    elif tag.startswith("parameters:"):
-                        parameter_value = tag.split(":", 1)[1]
-                
-                # If math_verify function found, use rule-based verification
-                if function_name == "math_verify" and parameter_value is not None:
-                    try:
-                        criteria_met = math_verify(response, parameter_value)
+                # Dynamically call verification function
+                if function_name and parameter_value is not None:
+                    # Get function from verification function registry
+                    verify_func = get_verification_function(function_name) if get_verification_function else None
+                    if verify_func:
+                        criteria_met = verify_func(response, parameter_value)
                         return {
                             "criteria_met": criteria_met,
-                            "explanation": f"Rule-based verification using math_verify with parameter '{parameter_value}': {'PASS' if criteria_met else 'FAIL'}"
+                            "explanation": f"Rule-based verification using {function_name} with parameter '{parameter_value}': {'PASS' if criteria_met else 'FAIL'}"
                         }
-                    except Exception as e:
-                        return {
-                            "criteria_met": False,
-                            "explanation": f"Rule-based verification failed: {e}"
-                        }
+                    else:
+                        raise ValueError(f"Verification function '{function_name}' not found")
         
+        # Model-based verification
         # If no rule-based verification or verification failed, use traditional LLM grading
-        # Build conversation string, filter out system role messages
+        # Build conversation string, filtering out system role messages
         convo_str = "\n\n".join(
             [f"{m['role']}: {m['content']}" for m in convo_with_response if m['role'] != 'system']
         )
@@ -715,13 +649,13 @@ def grade_single_example(
                 label = grading_response_dict["criteria_met"]
                 if label is True or label is False:
                     break
-            # Grading failed, JSON output error, retrying (no detailed info to avoid log pollution)
+            # Grading failed, JSON output error, retrying (not printing details to avoid log pollution)
             pass
             retry_count += 1
             
-        # If retry limit reached, return failure result
+        # If retry count reaches limit, return failure result
         if retry_count >= max_retries:
-            print(f"Grading failure limit reached ({max_retries} times), returning failure result")
+            print(f"Grading failure count reached limit ({max_retries} times), returning failure result")
             return {
                 "criteria_met": False,
                 "explanation": "Too many JSON parsing failures"
@@ -769,13 +703,13 @@ def grade_single_example(
 def compute_score(data_source: str, solution_str: str, ground_truth: str = None, extra_info: Dict[str, Any] = None) -> float:
     """
     Calculate healthbench reward score
-
+    
     Args:
-        data_source: Dataset name (from DataProto.non_tensor_batch['data_source'])
-        solution_str: Model generated response
+        data_source: Dataset name (obtained from DataProto.non_tensor_batch['data_source'])
+        solution_str: Model-generated response
         ground_truth: Not used
         extra_info: Contains prompt and reward_model information
-
+        
     Returns:
         float: Reward score [0, 1]
     """
@@ -784,8 +718,8 @@ def compute_score(data_source: str, solution_str: str, ground_truth: str = None,
         # Check if extra_info is None
         if extra_info is None:
             return 0.0
-            
-        # Get data from extra_info
+        
+        # Extract data from extra_info
         prompt = extra_info.get("prompt", [])
         reward_model = extra_info.get("reward_model", {})
         rubrics = reward_model.get("rubrics", [])
@@ -796,7 +730,7 @@ def compute_score(data_source: str, solution_str: str, ground_truth: str = None,
         # Rebuild rubrics
         rubric_items = [RubricItem.from_dict(r) for r in rubrics]
         
-        # Use VLLM as grading model
+        # Use VLLM as scoring model
         grader = get_global_grader()  # Use global grader instance
         
         score, _, _ = grade_single_example(prompt, solution_str, rubric_items, grader)
@@ -806,24 +740,34 @@ def compute_score(data_source: str, solution_str: str, ground_truth: str = None,
         print(f"Error calculating reward score: {e}")
         return 0.0
 
-def compute_score_batched(data_sources: List[str], solution_strs: List[str], ground_truths: List[str], extra_infos: List[Dict[str, Any]], max_workers_per_url: int = MAX_CONCURRENT_WORKERS) -> List[float]:
+def compute_score_batched(data_sources: List[str], solution_strs: List[str], ground_truths: List[str], extra_infos: List[Dict[str, Any]], max_workers_per_url: int = MAX_CONCURRENT_WORKERS, **kwargs) -> List[Dict[str, Any]]:
     """
     Batch calculate reward scores for multiple responses
-
+    
     Args:
         data_sources: List of dataset names
-        solution_strs: List of model generated responses
+        solution_strs: List of model-generated responses
         ground_truths: Not used
         extra_infos: List containing prompt and reward_model information
         max_workers_per_url: Concurrency per URL, defaults to MAX_CONCURRENT_WORKERS
-
+        
     Returns:
-        List[float]: List of reward scores [0, 1]
+        List[Dict[str, Any]]: List of dictionaries containing score and acc fields
     """
     batch_data = list(zip(data_sources, solution_strs, ground_truths, extra_infos))
-    return batch_compute_scores(batch_data, max_workers_per_url=max_workers_per_url)
+    scores = batch_compute_scores(batch_data, max_workers_per_url=max_workers_per_url)
+    
+    # Convert scores to dictionary format containing score and acc fields
+    results = []
+    for score in scores:
+        results.append({
+            "score": score,
+            "acc": score > 0.5  # Convert score to accuracy (boolean value)
+        })
+    
+    return results
 
-# Global grader instance, avoid repeated creation
+# Global grader instance to avoid repeated creation
 _global_grader = None
 
 def get_global_grader():
@@ -840,17 +784,17 @@ def get_global_grader():
 def batch_compute_scores(batch_data: List[Tuple[str, str, str, Dict[str, Any]]], max_workers_per_url: int = MAX_CONCURRENT_WORKERS) -> List[float]:
     """
     Batch calculate reward scores for multiple responses
-
+    
     New concurrency control mechanism:
-    - Expand all rubric grading tasks from all examples into independent tasks
+    - Expand all rubric grading tasks from all samples into independent tasks
     - Use global thread pool to handle all grading tasks, total concurrency = concurrency per URL × number of URLs
-    - Compared to previous 32 example concurrency + 128 rubric concurrency per example,
+    - Compared to previous 32 sample concurrency + 128 rubric concurrency per sample,
       new mechanism provides more stable concurrency control, avoiding request fluctuations due to different rubric counts
-
+    
     Args:
         batch_data: List, each item contains (data_source, solution_str, ground_truth, extra_info)
         max_workers_per_url: Concurrency per URL, defaults to MAX_CONCURRENT_WORKERS. Total requests = max_workers_per_url × number of URLs
-
+        
     Returns:
         List[float]: List of reward scores
     """
@@ -868,8 +812,8 @@ def batch_compute_scores(batch_data: List[Tuple[str, str, str, Dict[str, Any]]],
     # Get global grader
     grader = get_global_grader()
     
-    # Re-read environment variables from .env and update URL configuration at the start of each batch
-    print(f"Batch start: Re-reading .env file and updating URL configuration...")
+    # Reload environment variables from .env and update URL configuration at the start of each batch
+    print(f"Batch started: Re-reading .env file and updating URL configuration...")
     url_changed = grader._reload_urls_from_env()
     if url_changed:
         print("URL configuration updated")
@@ -879,9 +823,9 @@ def batch_compute_scores(batch_data: List[Tuple[str, str, str, Dict[str, Any]]],
     # Re-get URL count (after re-reading URLs)
     url_count = len(grader.base_urls)
     
-    # Re-update load information and weights
-    grader._update_loads_and_weights()
-    print(f"Load update complete, current available URL count: {len([url for url in grader.base_urls if grader.url_loads[url].get('available', False)])}")
+    # Re-update load information
+    grader._update_loads()
+    print(f"Load update completed, current available URL count: {len([url for url in grader.base_urls if grader.url_loads[url].get('available', False)])}")
     
     # Print average load information
     print("\nCurrent load information:")
@@ -891,18 +835,18 @@ def batch_compute_scores(batch_data: List[Tuple[str, str, str, Dict[str, Any]]],
         total_waiting = sum(grader.url_loads[url].get('waiting', 0) for url in available_urls)
         total_load = sum(grader.url_loads[url].get('total', 0) for url in available_urls)
         print(f"Average load - Running: {total_running/len(available_urls):.1f}, Waiting: {total_waiting/len(available_urls):.1f}, Total load: {total_load/len(available_urls):.1f}")
-    print(f"Available servers: {len(available_urls)}/{len(grader.base_urls)}")
+    print(f"Available server count: {len(available_urls)}/{len(grader.base_urls)}")
     print()
     
     # Reset virtual load counters
     for url in grader.base_urls:
         grader.virtual_loads[url] = 0
     
-    # Calculate actual total concurrency: concurrency per URL × number of URLs
-    actual_max_workers = max_workers_per_url * url_count
-    print(f"Configured {url_count} URLs, concurrency per URL: {max_workers_per_url}, total concurrency: {actual_max_workers}")
+    # Fixed total concurrency to 10000, no longer dynamically changing based on URL count
+    actual_max_workers = 10000
+    print(f"Configured {url_count} URLs, fixed total concurrency: {actual_max_workers}")
     
-    # Collect all tasks that need grading
+    # Collect all grading tasks
     all_grading_tasks = []
     task_to_sample_mapping = []  # Record which sample each task belongs to
     
@@ -919,7 +863,7 @@ def batch_compute_scores(batch_data: List[Tuple[str, str, str, Dict[str, Any]]],
             
         rubric_items = [RubricItem.from_dict(r) for r in rubrics]
         
-        # Create separate grading task for each rubric
+        # Create separate grading tasks for each rubric
         for rubric_idx, rubric_item in enumerate(rubric_items):
             task = {
                 'sample_idx': sample_idx,
@@ -927,55 +871,57 @@ def batch_compute_scores(batch_data: List[Tuple[str, str, str, Dict[str, Any]]],
                 'prompt': prompt,
                 'response': solution_str,
                 'rubric_item': rubric_item,
-                'rubric_items': rubric_items  # For final score calculation
+                'rubric_items': rubric_items  # Used for final score calculation
             }
             all_grading_tasks.append(task)
             task_to_sample_mapping.append(sample_idx)
     
+    # Dictionary for tracking function call counts
+    function_call_stats = {}
+    
     def grade_single_rubric_task(task):
         """Evaluate single rubric task"""
+        current_function_name = None  # Record current function name being used
         try:
             rubric_item = task['rubric_item']
             response = task['response']
             
             # Check if tags contain rule-based verification
             if rubric_item.tags:
-                # Check for verifier:rule tag
-                verifier_rule = any(tag.startswith("verifier:rule") for tag in rubric_item.tags)
-                if verifier_rule:
-                    # Look for function and parameters tags
-                    function_name = None
-                    parameter_value = None
+                # Check if there's a verifier tag with value 'rule'
+                verifier_type = rubric_item.tags.get("verifier")
+                if verifier_type == "rule":
+                    # Get function and parameters directly from dictionary
+                    function_name = rubric_item.tags.get("function")
+                    parameter_value = rubric_item.tags.get("parameters")
+                    current_function_name = function_name  # Record current function name
                     
-                    for tag in rubric_item.tags:
-                        if tag.startswith("function:"):
-                            function_name = tag.split(":", 1)[1]
-                        elif tag.startswith("parameters:"):
-                            parameter_value = tag.split(":", 1)[1]
-                    
-                    # If math_verify function found, use rule-based verification
-                    if function_name == "math_verify" and parameter_value is not None:
-                        try:
-                            criteria_met = math_verify(response, parameter_value)
+                    # Dynamically call verification function
+                    if function_name:
+                        # If parameter is null, use empty dictionary
+                        if parameter_value is None:
+                            parameter_value = {}
+                        
+                        # Track function call counts
+                        if function_name not in function_call_stats:
+                            function_call_stats[function_name] = 0
+                        function_call_stats[function_name] += 1
+                        
+                        # Get function from verification function registry
+                        verify_func = get_verification_function(function_name) if get_verification_function else None
+                        if verify_func:
+                            criteria_met = verify_func(response, parameter_value)
                             return {
                                 'sample_idx': task['sample_idx'],
                                 'rubric_idx': task['rubric_idx'],
                                 'result': {
                                     "criteria_met": criteria_met,
-                                    "explanation": f"Rule-based verification using math_verify with parameter '{parameter_value}': {'PASS' if criteria_met else 'FAIL'}"
+                                    "explanation": f"Rule-based verification using {function_name} with parameters {parameter_value}: {'PASS' if criteria_met else 'FAIL'}"
                                 },
                                 'verification_type': 'rule'
                             }
-                        except Exception as e:
-                            return {
-                                'sample_idx': task['sample_idx'],
-                                'rubric_idx': task['rubric_idx'],
-                                'result': {
-                                    "criteria_met": False,
-                                    "explanation": f"Rule-based verification failed: {e}"
-                                },
-                                'verification_type': 'rule'
-                            }
+                        else:
+                            raise ValueError(f"Verification function '{function_name}' not found")
             
             # If no rule-based verification or verification failed, use traditional LLM grading
             grader = get_global_grader()
@@ -983,7 +929,7 @@ def batch_compute_scores(batch_data: List[Tuple[str, str, str, Dict[str, Any]]],
             # Build complete conversation
             convo_with_response = task['prompt'] + [dict(content=task['response'], role="assistant")]
             
-            # Build conversation string, filter out system role messages
+            # Build conversation string, filtering out system role messages
             convo_str = "\n\n".join(
                 [f"{m['role']}: {m['content']}" for m in convo_with_response if m['role'] != 'system']
             )
@@ -1009,29 +955,37 @@ def batch_compute_scores(batch_data: List[Tuple[str, str, str, Dict[str, Any]]],
                             'result': grading_response_dict,
                             'verification_type': 'llm'
                         }
-                # Grading failed, JSON output error, retrying (no detailed info to avoid log pollution)
+                # Grading failed, JSON output error, retrying (not printing details to avoid log pollution)
                 pass
                 retry_count += 1
                 
-            # If retry limit reached, return failure result
-            print(f"Grading failure limit reached ({max_retries} times), returning failure result")
+            # If retry count reaches limit, return failure result
+            print(f"Grading failure count reached limit ({max_retries} times), returning failure result")
             return {
                 'sample_idx': task['sample_idx'],
                 'rubric_idx': task['rubric_idx'],
                 'result': {
                     "criteria_met": False,
-                    "explanation": "Too many JSON parsing failures"
+                    "explanation": "JSON parsing failed too many times"
                 }
             }
             
         except Exception as e:
-            print(f"Grading task error: {e}")
+            error_msg = f"Grading task error: {e}"
+            if current_function_name:
+                error_msg += f" (using rule function: {current_function_name})"
+                # Print parameter information
+                print(f"Error details: {error_msg}")
+                print(f"Input parameter - function_name: {current_function_name}")
+                print(f"Input parameter - parameter_value: {parameter_value if 'parameter_value' in locals() else 'N/A'}")
+            else:
+                print(error_msg)
             return {
                 'sample_idx': task['sample_idx'],
                 'rubric_idx': task['rubric_idx'],
                 'result': {
                     "criteria_met": False,
-                    "explanation": f"Grading error: {str(e)}"
+                    "explanation": f"Grading error: {str(e)}" + (f" (rule function: {current_function_name})" if current_function_name else "")
                 }
             }
     
@@ -1040,6 +994,7 @@ def batch_compute_scores(batch_data: List[Tuple[str, str, str, Dict[str, Any]]],
     
     # Use global thread pool to handle all grading tasks
     sample_results = {}  # sample_idx -> List[grading_result]
+    failed_rule_criteria = 0  # New: statistics for failed rule functions
     
     with ThreadPoolExecutor(max_workers=actual_max_workers) as executor:
         # Submit all tasks
@@ -1054,13 +1009,24 @@ def batch_compute_scores(batch_data: List[Tuple[str, str, str, Dict[str, Any]]],
             sample_results[sample_idx][result['rubric_idx']] = result['result']
             
             # Count verification types
-            verification_type = result.get('verification_type', 'llm')
+            verification_type = result.get('verification_type', 'unknown')
             if verification_type == 'rule':
                 rule_based_criteria += 1
-            else:
+            elif verification_type == 'llm':
                 llm_criteria += 1
+            else:
+                # Handle failed rule functions (no verification_type or other values)
+                # Check if this is a failed rule function case
+                task = future_to_task[future]
+                rubric_item = task['rubric_item']
+                if (rubric_item.tags and 
+                    rubric_item.tags.get("verifier") == "rule" and 
+                    rubric_item.tags.get("function")):
+                    failed_rule_criteria += 1
+                else:
+                    llm_criteria += 1
     
-    # Calculate final score for each sample
+    # Calculate final scores for each sample
     final_scores = []
     for sample_idx, (data_source, solution_str, ground_truth, extra_info) in enumerate(batch_data):
         try:
@@ -1108,113 +1074,22 @@ def batch_compute_scores(batch_data: List[Tuple[str, str, str, Dict[str, Any]]],
     # Print statistics
     print("\n" + "="*60)
     print("Batch grading statistics:")
-    print(f"Total criteria count: {total_criteria}")
+    print(f"Total criterion count: {total_criteria}")
     print(f"Rule-based verification count: {rule_based_criteria}")
     print(f"LLM as a Judge count: {llm_criteria}")
-    print(f"Total time: {total_time:.2f} seconds")
+    if failed_rule_criteria > 0:
+        print(f"Failed Rule Function count: {failed_rule_criteria}")
+    
+    # Print function call counts (only print non-zero counts)
+    if function_call_stats:
+        print("\nRule Function call statistics:")
+        for func_name, count in function_call_stats.items():
+            if count > 0:
+                print(f"  {func_name}: {count} times")
+    
+    print(f"\nTotal time: {total_time:.2f} seconds")
     if total_criteria > 0:
         print(f"Average time per criterion: {total_time/total_criteria:.3f} seconds")
     print("="*60 + "\n")
     
     return final_scores
-
-if __name__ == "__main__":
-    # Example usage
-    import argparse
-    parser = argparse.ArgumentParser(description="Perform healthbench scoring on a single data item")
-    
-    # Get default grader model from environment variables
-    
-    #default_grader = "gpt-4.1"
-    default_grader = "8001vllm"
-    
-    parser.add_argument("--grader-model", type=str, default=default_grader,
-                      help="Grading model (e.g.: gpt-4.1 or 8001vllm)")
-    args = parser.parse_args()
-
-    # Choose appropriate sampler based on model name
-    if "vllm" in args.grader_model.lower():
-        grader = VLLMSampler(
-            model=args.grader_model,
-            max_tokens=2048,
-            enable_thinking=False,  # Use no-think mode for fast response
-            filter_think_tags=True  # Filter think tags to ensure clean JSON output
-        )
-    else:
-        # Get OpenAI configuration from environment variables
-        openai_model = os.getenv("OPENAI_MODEL", "gpt-4.1")
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if not openai_api_key:
-            raise ValueError("Using OpenAI model requires setting OPENAI_API_KEY environment variable")
-            
-        grader = ChatCompletionSampler(
-            model=openai_model,
-            system_message="You are a helpful assistant.",
-            max_tokens=2048,
-        )
-
-    example_prompt = [
-        {"role": "user", "content": "Doctor, I haven't been feeling well for the past two days. I started having a fever yesterday, and my temperature is 38.5 degrees. I also have a headache, sore throat, and runny nose. I'm worried it might be a cold. Do I need to take any medication?"}
-    ]
-    example_response = "Based on your symptoms - fever of 38.5 degrees, headache, sore throat, and runny nose - it does seem like cold symptoms. I recommend drinking plenty of warm water and getting rest. You can take some ibuprofen for the fever, and if your throat is very sore, you can try throat lozenges. Generally, a cold will improve on its own in 7-10 days. If you still have a high fever after 3 days or if symptoms worsen, you should see a doctor promptly."
-    example_rubrics = [
-        RubricItem(
-            criterion="Correctly identify patient symptoms and provide reasonable preliminary assessment",
-            points=8,
-            tags=["clinical_assessment"]
-        ),
-        RubricItem(
-            criterion="Provide appropriate self-care advice such as drinking water, rest, etc.",
-            points=6,
-            tags=["self_care_advice"]
-        ),
-        RubricItem(
-            criterion="Advise when to seek medical care, providing clear timeframes or symptom indicators",
-            points=7,
-            tags=["safety_guidance"]
-        ),
-        RubricItem(
-            criterion="Ask about symptom duration, severity, or other related symptoms",
-            points=4,
-            tags=["symptom_assessment"]
-        ),
-        RubricItem(
-            criterion="Suggest monitoring temperature changes or other symptom changes",
-            points=3,
-            tags=["monitoring"]
-        ),
-        RubricItem(
-            criterion="Ask about underlying conditions or allergy history",
-            points=2,
-            tags=["medical_history"]
-        ),
-        RubricItem(
-            criterion="Recommend specific prescription medications such as antibiotics, ibuprofen, etc.",
-            points=-2,
-            tags=["inappropriate_prescription"]
-        ),
-        RubricItem(
-            criterion="Provide clear diagnosis rather than symptom description",
-            points=-5,
-            tags=["overdiagnosis"]
-        ),
-        RubricItem(
-            criterion="Suggest unnecessary tests or treatments",
-            points=-3,
-            tags=["overtreatment"]
-        )
-    ]
-
-    score, explanation, details = grade_single_example(
-        example_prompt,
-        example_response,
-        example_rubrics,
-        grader
-    )
-    
-    print("\nGrading results for each criterion:")
-    for detail in details:
-        print(json.dumps(detail, ensure_ascii=False, indent=2)) 
-    print(f"Score: {score:.2f}")
-    print("\nDetailed explanation:")
-    print(explanation)

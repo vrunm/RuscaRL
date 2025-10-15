@@ -32,5 +32,5 @@ def _default_compute_score(data_source, solution_str, ground_truth, extra_info=N
             return float(res[0])
     except Exception as e:
         print(f"[ERROR] Error in process_completion for task : {str(e)}")
-        traceback.print_exc()  
-        raise 
+        traceback.print_exc() 
+        raise  

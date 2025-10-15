@@ -145,14 +145,29 @@ class TaskRunner:
         )
 
         # Note that we always use function-based RM for validation
-        val_reward_fn = reward_manager_cls(
-            tokenizer=tokenizer,
-            num_examine=1,
-            compute_score=compute_score,
-            reward_fn_key=config.data.reward_fn_key,
-            max_resp_len=config.data.max_response_length,
-            overlong_buffer_cfg=config.reward_model.overlong_buffer,
-        )
+        # Check if validation uses a different custom reward function
+        if config.get("val_custom_reward_function"):
+            # Create a temporary config for validation with the custom reward function
+            val_config = OmegaConf.create(OmegaConf.to_container(config, resolve=True))
+            val_config.custom_reward_function = config.val_custom_reward_function
+            val_compute_score = get_custom_reward_fn(val_config)
+            val_reward_fn = reward_manager_cls(
+                tokenizer=tokenizer,
+                num_examine=1,
+                compute_score=val_compute_score,
+                reward_fn_key=config.data.reward_fn_key,
+                max_resp_len=config.data.max_response_length,
+                overlong_buffer_cfg=config.reward_model.overlong_buffer,
+            )
+        else:
+            val_reward_fn = reward_manager_cls(
+                tokenizer=tokenizer,
+                num_examine=1,
+                compute_score=compute_score,
+                reward_fn_key=config.data.reward_fn_key,
+                max_resp_len=config.data.max_response_length,
+                overlong_buffer_cfg=config.reward_model.overlong_buffer,
+            )
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
         trainer = RayDAPOTrainer(

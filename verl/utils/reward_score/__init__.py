@@ -47,10 +47,14 @@ def default_compute_score(data_source, solution_str, ground_truth, extra_info=No
 
         # from . import math_verify
         # res = math_verify.compute_score(solution_str, ground_truth)
-    elif data_source == "math_dapo" or data_source.startswith("aime"):
+    elif data_source == "math_dapo" or data_source.startswith("aime") or data_source in ["aime24", "aime25", "amc23", "math500"]:
         from . import math_dapo
 
         res = math_dapo.compute_score(solution_str, ground_truth)
+    elif data_source == "math_dapo_r1":
+        from . import math_dapo_r1
+
+        res = math_dapo_r1.compute_score(solution_str, ground_truth)
     elif data_source in [
         "numina_aops_forum",
         "numina_synthetic_math",

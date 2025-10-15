@@ -103,16 +103,51 @@ class RayDAPOTrainer(RayPPOTrainer):
                 new_batch: DataProto = DataProto.from_single_dict(batch_dict)
                 num_gen_batches += 1
                 # pop those keys for generation
+                batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
+                non_tensor_batch_keys_to_pop = ["raw_prompt_ids"]
+                
                 if "multi_modal_data" in new_batch.non_tensor_batch.keys():
-                    gen_batch = new_batch.pop(
-                        batch_keys=["input_ids", "attention_mask", "position_ids"],
-                        non_tensor_batch_keys=["raw_prompt_ids", "multi_modal_data"],
-                    )
+                    non_tensor_batch_keys_to_pop.append("multi_modal_data")
+                
+                # 检查是否启用分层系统提示词功能，如果启用则保留reward_model字段
+                enable_graded_system_prompt = getattr(self.config.actor_rollout_ref.rollout, 'enable_graded_system_prompt', False)
+                if enable_graded_system_prompt and "reward_model" in new_batch.non_tensor_batch:
+                    print(f"[DAPO_TRAINER] 分层系统提示词功能已启用，通过meta_info传递reward_model信息")
+                    
+                    # 提取reward_model信息并放入meta_info作为额外数据通道
+                    reward_models = []
+                    for i in range(len(new_batch)):
+                        reward_model = new_batch.non_tensor_batch['reward_model'][i]
+                        reward_models.append(reward_model)
+                    
+                    # 将reward_model信息存储到meta_info中，作为备用数据通道
+                    gen_batch_meta_info = {
+                        "graded_system_prompt_reward_models": reward_models,
+                        "enable_graded_system_prompt": True
+                    }
+                    print(f"[DAPO_TRAINER] 成功提取{len(reward_models)}个reward_model到meta_info")
+                    
+                    # reward_model可以从non_tensor_batch中pop掉，因为我们已经通过meta_info传递
+                    non_tensor_batch_keys_to_pop.append("reward_model")
                 else:
-                    gen_batch = new_batch.pop(
-                        batch_keys=["input_ids", "attention_mask", "position_ids"],
-                        non_tensor_batch_keys=["raw_prompt_ids"],
-                    )
+                    # 如果没有启用分层系统提示词功能，reward_model字段可以被pop掉
+                    if "reward_model" in new_batch.non_tensor_batch:
+                        non_tensor_batch_keys_to_pop.append("reward_model")
+                    gen_batch_meta_info = {}
+                
+                gen_batch = new_batch.pop(
+                    batch_keys=batch_keys_to_pop,
+                    non_tensor_batch_keys=non_tensor_batch_keys_to_pop,
+                )
+                
+                # 将reward_model信息添加到gen_batch的meta_info中
+                gen_batch.meta_info.update(gen_batch_meta_info)
+                
+                # 添加训练步数信息到meta_info中（用于step_linear规则）
+                gen_batch.meta_info.update({
+                    "global_steps": self.global_steps,
+                    "total_training_steps": self.total_training_steps
+                })
 
                 is_last_step = self.global_steps >= self.total_training_steps
 

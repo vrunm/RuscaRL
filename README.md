@@ -109,17 +109,18 @@ The data format we use contains the following key fields:
 
 ### Data Processing
 
-Use the provided data processing script:
+Use the provided data processing scripts in the `prepare_data/` directory:
 
 ```bash
 cd RuscaRL
-python health_bench/prepare_healthbench.py
+
+# Process HealthBench data
+python prepare_data/prepare_healthbench.py
+
+# Process RaR (Rubrics as Rewards) data
+python prepare_data/prepare_rar.py
 ```
 
-Script functions:
-
-- Construct parquet format that meets verl training requirements from HealthBench's original JSONL
-- Randomly shuffle the data
 
 ## ⚙️ Installation
 

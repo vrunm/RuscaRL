@@ -12,8 +12,11 @@ DATA_VAL_PATH="[data/gpqa_diamond/test.parquet,data/ResearchQA/eval.parquet]"
 EXPERIMENT_NAME="${MODEL_NAME}_${DATA_NAME}"
 
 # Dynamic batch configuration
-max_prompt_length=4096
-max_response_length=4096
+max_prompt_length=$((1024 * 4))
+max_response_length=$((1024 * 8))
+enable_overlong_buffer=True
+overlong_buffer_len=$((1024 * 4))
+overlong_penalty_factor=0.5
 use_dynamic_bsz=True
 max_tokens=$((max_prompt_length + max_response_length))
 max_tokens=$((1024 * 22))
@@ -37,9 +40,12 @@ python3 -m recipe.dapo.main_dapo \
     data.max_response_length=${max_response_length} \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
+    reward_model.overlong_buffer.enable=${enable_overlong_buffer} \
+    reward_model.overlong_buffer.len=${overlong_buffer_len} \
+    reward_model.overlong_buffer.penalty_factor=${overlong_penalty_factor} \
     custom_reward_function.path=../verl/health_bench/healthbench_reward_fn.py \
     custom_reward_function.name=compute_score_batched \
-    reward_model.reward_manager=batch \
+    reward_model.reward_manager=batch_dapo \
     actor_rollout_ref.model.path=${MODEL_PATH} \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.actor.optim.warmup_style=constant \
@@ -65,8 +71,8 @@ python3 -m recipe.dapo.main_dapo \
     actor_rollout_ref.rollout.n=8 \
     actor_rollout_ref.rollout.enable_graded_system_prompt=False \
     actor_rollout_ref.rollout.graded_system_prompt_rule=step_sigmoid \
-    actor_rollout_ref.rollout.graded_system_prompt_step_sigmoid_start_point=0.2 \
-    actor_rollout_ref.rollout.graded_system_prompt_step_sigmoid_steepness=125 \
+    actor_rollout_ref.rollout.graded_system_prompt_step_sigmoid_start_point=0.15 \
+    actor_rollout_ref.rollout.graded_system_prompt_step_sigmoid_steepness=200 \
     actor_rollout_ref.rollout.graded_system_prompt_add_base_when_zero=False \
     actor_rollout_ref.rollout.max_num_batched_tokens=${max_num_batched_tokens} \
     actor_rollout_ref.rollout.temperature=1.0 \
@@ -94,5 +100,5 @@ python3 -m recipe.dapo.main_dapo \
     trainer.test_freq=5 \
     trainer.rollout_data_dir="./log/rollout_log/${EXPERIMENT_NAME}" \
     trainer.validation_data_dir="./log/validation_log/${EXPERIMENT_NAME}" \
-    trainer.total_training_steps=350 \
+    trainer.total_training_steps=500 \
     trainer.total_epochs=5 $@

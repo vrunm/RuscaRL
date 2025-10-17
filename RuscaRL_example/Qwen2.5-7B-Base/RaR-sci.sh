@@ -5,7 +5,7 @@ MODEL_NAME="Qwen2.5-7B"
 MODEL_PATH="model/${MODEL_NAME}"
 
 DATA_NAME="RaR-sci"
-DATA_TRAIN_PATH="data/rar/science-o3-mini.parquet"
+DATA_TRAIN_PATH="data/RaR/science-o3-mini.parquet"
 DATA_VAL_PATH="data/gpqa_diamond/test.parquet"
 
 # Experiment configuration

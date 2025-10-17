@@ -5,7 +5,7 @@ MODEL_NAME="Qwen2.5-7B"
 MODEL_PATH="model/${MODEL_NAME}"
 
 DATA_NAME="RaR-med"
-DATA_TRAIN_PATH="data/rar/medicine-o3-mini.parquet"
+DATA_TRAIN_PATH="data/RaR/medicine-o3-mini.parquet"
 DATA_VAL_PATH="data/health_bench/healthbench_val.parquet"
 
 # Experiment configuration

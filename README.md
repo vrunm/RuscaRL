@@ -19,14 +19,14 @@
 
 ## 🧭 Contents
 
-- 🔥 [Updates](#-updates)
-- 📖 [Overview](#-overview)
-- 🗂️ [Dataset](#-dataset)
-- ⚙️ [Installation](#-installation)
-- 🧩 [Configuration](#-configuration)
-- ⚡ [Training](#-training)
-- 📝 [Citation](#-citation)
-- 📧 [Contact](#-contact)
+- 🔥 [Updates](#updates)
+- 📖 [Overview](#overview)
+- 🗂️ [Dataset](#dataset)
+- ⚙️ [Installation](#installation)
+- 🧩 [Configuration](#configuration)
+- ⚡ [Training](#training)
+- 📝 [Citation](#citation)
+- 📧 [Contact](#contact)
 
 ## 🔥 Updates
 

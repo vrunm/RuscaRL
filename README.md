@@ -156,8 +156,7 @@ vllm serve "$MODEL_PATH" \
       --port 8001 \
       --host 0.0.0.0 \
       --tensor-parallel-size 2 \
-      --served-model-name default \
-      --disable-log-requests
+      --served-model-name grader 
 ```
 
 ### Environment Configuration
@@ -165,7 +164,7 @@ vllm serve "$MODEL_PATH" \
 Create a `.env` file and configure necessary environment variables:
 
 ```env
-VLLM_MODEL=default
+VLLM_MODEL=grader
 VLLM_MAX_TOKENS=4096
 VLLM_TIMEOUT=600
 VLLM_BASE_URL="

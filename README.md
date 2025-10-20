@@ -24,15 +24,15 @@
 - 📊 [Data Format](#-data-format)
 - ⚙️ [Installation](#-installation)
 - 🧩 [Configuration](#️-configuration-and-launch)
-- ⚡ [Quick Start](#-quick-start)
-- 🎓 [Citation](#-citation)
+- ⚡ [Training](#-training)
+- 📝 [Citation](#-citation)
 - 📧 [Contact](#-contact)
 
 ## **🔥**Updates
 
 - `[Oct 15, 2025]` 🔧 Added support for reward functions with hybrid rule-based verification!
 - `[Sep 26, 2025]` 💻 Released RuscaRL code!
-- `[Aug 23, 2025]` 📝 Released RuscaRL paper on arXiv!
+- `[Aug 23, 2025]` 📄 Released RuscaRL paper on arXiv!
 
 ## 📖 Overview
 
@@ -114,8 +114,6 @@ We provide conversion scripts for several high-quality open-source Rubric datase
 Use the provided data processing scripts in the `rubric_prepare/` directory:
 
 ```bash
-cd RuscaRL
-
 # Process HealthBench data
 python rubric_prepare/prepare_healthbench.py
 
@@ -129,6 +127,24 @@ python rubric_prepare/prepare_researchqa.py
 
 ## ⚙️ Installation
 
+### Clone Repository
+
+First, clone the RuscaRL repository:
+
+```bash
+# Using HTTPS
+git clone https://github.com/IANNXANG/RuscaRL.git
+
+# Or using SSH
+git clone git@github.com:IANNXANG/RuscaRL.git
+
+# Navigate to the project directory
+cd RuscaRL
+```
+
+> [!IMPORTANT]
+> **All subsequent commands should be run from the RuscaRL directory.** We recommend keeping RuscaRL as your working directory to avoid any path-related issues.
+
 ### Basic Environment
 
 This project is built on verl 0.4.1. Please first complete the basic installation according to the [verl official documentation](https://verl.readthedocs.io/en/latest/index.html).
@@ -138,9 +154,9 @@ This project is built on verl 0.4.1. Please first complete the basic installatio
 After completing the verl basic installation, execute in the project root directory:
 
 ```bash
-cd RuscaRL
 pip install --no-deps -e .
 ```
+
 ## 🧩 Configuration
 
 ### Recommended Deployment
@@ -249,23 +265,21 @@ actor_rollout_ref:
   - Smaller values (e.g., 10): gradual decay
   - Larger values (e.g., 125): rapid decay (recommended setting)
 
-## ⚡ Quick Start
+## ⚡ Training
 
 Start RuscaRL training:
 
 ```bash
-cd RuscaRL
 bash RuscaRL_example/Qwen2.5-7B-Instruct/healthbench_RuscaRL.sh
 ```
 
 Start Rubric-based RL training:
 
 ```bash
-cd RuscaRL
 bash RuscaRL_example/Qwen2.5-7B-Instruct/healthbench_RL.sh
 ```
 
-## 🎓 Citation
+## 📝 Citation
 
 If you find RuscaRL useful in your research, please cite our paper:
 

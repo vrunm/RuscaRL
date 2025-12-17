@@ -30,6 +30,7 @@
 
 <h2 id="updates">🔥 Updates</h2>
 
+- `[Dec 17, 2025]` Added `health_bench/scaleai_batch_reward_fn.py`, moving from per-criterion grading to rubric-level batch grading (all criteria are scored in a single grader call); see [Online Rubrics Elicitation from Pairwise Comparisons](https://arxiv.org/abs/2510.07284). Recommended grader: [`gpt-oss-120b`](https://huggingface.co/openai/gpt-oss-120b).
 - `[Oct 15, 2025]` 🔧 Added support for reward functions with hybrid rule-based verification!
 - `[Sep 26, 2025]` 💻 Released RuscaRL code!
 - `[Aug 23, 2025]` 📄 Released RuscaRL paper on arXiv!
@@ -161,12 +162,13 @@ pip install --no-deps -e .
 
 ### Recommended Deployment
 
-We recommend using vllm 0.8.5 to deploy Qwen3-32B as the Grader LLM.
+We recommend using vllm >= 0.11.0 to deploy [`Qwen3-32B`](https://huggingface.co/Qwen/Qwen3-32B) as the Grader LLM.
 
 Recommended deployment script:
 
 ```bash
-MODEL_PATH=Qwen/Qwen3-32B
+MODEL_PATH=openai/gpt-oss-120b
+# In follow-up experiments, `openai/gpt-oss-120b` paired with `health_bench/scaleai_batch_reward_fn.py` showed significant gains in both efficiency and grading quality.
 
 vllm serve "$MODEL_PATH" \
       --port 8001 \
@@ -197,6 +199,12 @@ http://localhost:8001/v1,http://localhost:8002/v1,http://localhost:8003/v1,http:
 ```yaml
 custom_reward_function:
   path: health_bench/healthbench_reward_fn.py
+```
+
+For rubric-level batch grading (all criteria sent together in one judge call), use:
+```yaml
+custom_reward_function:
+  path: health_bench/scaleai_batch_reward_fn.py
 ```
 
 #### Hybrid Rule Support

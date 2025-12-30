@@ -237,7 +237,7 @@ class AsyncvLLMServer(AsyncServerBase):
             override_generation_config=kwargs,
             tensor_parallel_size=tensor_parallel_size,
             distributed_executor_backend=distributed_executor_backend,
-            dtype=config.dtype,
+            dtype="auto",
             enforce_eager=config.enforce_eager,
             gpu_memory_utilization=config.gpu_memory_utilization,
             disable_custom_all_reduce=True,

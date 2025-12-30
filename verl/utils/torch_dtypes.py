@@ -21,7 +21,7 @@ import torch
 
 HALF_LIST = [16, "16", "fp16", "float16", torch.float16]
 FLOAT_LIST = [32, "32", "fp32", "float32", torch.float32]
-BFLOAT_LIST = ["bf16", "bfloat16", torch.bfloat16]
+BFLOAT_LIST = ["bf16", "bfloat16", torch.float16]
 
 
 class PrecisionType:
@@ -66,7 +66,7 @@ class PrecisionType:
         elif precision in FLOAT_LIST:
             return torch.float32
         elif precision in BFLOAT_LIST:
-            return torch.bfloat16
+            return torch.float16
         else:
             raise RuntimeError(f"unexpected precision: {precision}")
 
@@ -76,7 +76,7 @@ class PrecisionType:
             return "fp16"
         elif precision == torch.float32:
             return "fp32"
-        elif precision == torch.bfloat16:
+        elif precision == torch.float16:
             return "bf16"
         else:
             raise RuntimeError(f"unexpected precision: {precision}")

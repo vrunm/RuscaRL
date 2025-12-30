@@ -421,7 +421,7 @@ def merge_megatron_ckpt_llama(wrapped_models, config, dtype, is_value_model=Fals
 
     get_torch_device().empty_cache()
     if torch.distributed.get_rank() == 0:
-        if dtype not in [torch.float16, torch.bfloat16, torch.float32]:
+        if dtype not in [torch.float16, torch.float16, torch.float32]:
             print(f'Unknown/unsupported dtype to save: {dtype}"')
             exit(1)
         for k, v in state_dict.items():

@@ -106,7 +106,7 @@ class HFRollout(BaseRollout):
         if isinstance(self.module, FSDP):
             # recurse need to set to False according to https://github.com/pytorch/pytorch/issues/100069
             param_ctx = FSDP.summon_full_params(self.module, writeback=False, recurse=False)
-        with param_ctx, torch.autocast(device_type=get_device_name(), dtype=torch.bfloat16):
+        with param_ctx, torch.autocast(device_type=get_device_name(), dtype=torch.float16):
             output = self.module.generate(
                 input_ids=idx,
                 attention_mask=attention_mask,

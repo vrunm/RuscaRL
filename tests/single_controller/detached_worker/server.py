@@ -75,7 +75,7 @@ class Trainer(MegatronWorker):
             num_key_value_heads=16,
         )
 
-        megatron_config = mcore_model_parallel_config(sequence_parallel=True, params_dtype=torch.bfloat16)
+        megatron_config = mcore_model_parallel_config(sequence_parallel=True, params_dtype=torch.float16)
         self.megatron_config = megatron_config
 
         def megatron_actor_model_provider(pre_process, post_process):

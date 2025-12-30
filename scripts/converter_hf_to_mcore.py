@@ -329,7 +329,7 @@ def convert_hf_to_mcore(hf_model_path, output_path, use_cpu_initialization=False
     hf_config = AutoConfig.from_pretrained(hf_model_path)
     print(hf_config, flush=True)
 
-    tfconfig = hf_to_mcore_config(hf_config, torch.bfloat16)
+    tfconfig = hf_to_mcore_config(hf_config, torch.float16)
     tfconfig.use_cpu_initialization = use_cpu_initialization
     tie_word_embeddings = getattr(hf_config, "tie_word_embeddings", False)
 
@@ -366,9 +366,9 @@ def convert_hf_to_mcore(hf_model_path, output_path, use_cpu_initialization=False
 
     # init hf model
     if "Qwen2_5_VLForConditionalGeneration" in hf_config.architectures:
-        hf_model = AutoModelForImageTextToText.from_pretrained(hf_model_path, torch_dtype=torch.bfloat16, trust_remote_code=trust_remote_code)
+        hf_model = AutoModelForImageTextToText.from_pretrained(hf_model_path, torch_dtype=torch.float16, trust_remote_code=trust_remote_code)
     else:
-        hf_model = AutoModelForCausalLM.from_pretrained(hf_model_path, torch_dtype=torch.bfloat16, trust_remote_code=trust_remote_code)
+        hf_model = AutoModelForCausalLM.from_pretrained(hf_model_path, torch_dtype=torch.float16, trust_remote_code=trust_remote_code)
     hf_state_dict = hf_model.state_dict()
 
     # load hf state dict to megatron model
@@ -390,7 +390,7 @@ def convert_hf_to_mcore(hf_model_path, output_path, use_cpu_initialization=False
             state_dict=hf_state_dict,
             wrapped_models=model,
             config=hf_config,
-            params_dtype=torch.bfloat16,
+            params_dtype=torch.float16,
             is_value_model=False,
         )
 

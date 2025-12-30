@@ -116,7 +116,7 @@ class DataParallelPRIMERewardModel:
 
         if self.ref_module is not None:
             # do not have to pad again
-            with torch.no_grad(), torch.autocast(device_type=get_device_name(), dtype=torch.bfloat16):
+            with torch.no_grad(), torch.autocast(device_type=get_device_name(), dtype=torch.float16):
                 if self.ulysses_sequence_parallel_size > 1 and self.use_remove_padding:
                     ref_output = self.ref_module(
                         input_ids=input_ids_rmpad,

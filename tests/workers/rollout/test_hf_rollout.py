@@ -74,7 +74,7 @@ def prepare_fsdp_model(model, world_size):
 
     device_mesh = init_device_mesh("cuda", mesh_shape=(world_size,), mesh_dim_names=["fsdp"])
 
-    mixed_precision = MixedPrecision(param_dtype=torch.bfloat16, reduce_dtype=torch.float32, buffer_dtype=torch.float32)
+    mixed_precision = MixedPrecision(param_dtype=torch.float16, reduce_dtype=torch.float32, buffer_dtype=torch.float32)
 
     fsdp_model = FSDP(
         model,
@@ -109,7 +109,7 @@ def test_hf_rollout(n: int = 1, do_sample: bool = True, validate: bool = False):
 
     # Initialize FSDP model
     actor_model = AutoModelForCausalLM.from_pretrained(local_model_path, trust_remote_code=True)
-    actor_model.to(torch.bfloat16)
+    actor_model.to(torch.float16)
     fsdp_model = prepare_fsdp_model(actor_model, world_size)
 
     # Initialize HFRollout and start generate

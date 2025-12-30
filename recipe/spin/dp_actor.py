@@ -174,7 +174,7 @@ class SPINDataParallelPPOActor(DataParallelPPOActor):
                 micro_batch_rejected_inputs["position_ids"] = batch_td["rejected_position_ids"][start_idx:end_idx]
 
             # Determine autocast dtype
-            autocast_dtype = torch.bfloat16  # Or get dynamically from config/FSDP settings
+            autocast_dtype = torch.float16  # Or get dynamically from config/FSDP settings
             # --- Autocast Forward Pass ---
             with torch.autocast(device_type=get_device_name(), dtype=autocast_dtype):
                 # --- Step 1: Forward pass for CURRENT policy log probs (with grad) ---

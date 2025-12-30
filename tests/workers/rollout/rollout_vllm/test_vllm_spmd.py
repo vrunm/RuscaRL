@@ -81,7 +81,7 @@ def test_vllm_spmd():
     tokenizer = AutoTokenizer.from_pretrained(local_model_path, padding_side="left", trust_remote_code=True)
 
     actor_model = AutoModelForCausalLM.from_pretrained(local_model_path, trust_remote_code=True)
-    actor_model.to(torch.bfloat16)
+    actor_model.to(torch.float16)
 
     # fill rollout config
     max_prompt_length = 16
@@ -113,7 +113,7 @@ def test_vllm_spmd():
 
     device_mesh = init_device_mesh("cuda", mesh_shape=(world_size,), mesh_dim_names=["fsdp"])
 
-    mixed_precision = MixedPrecision(param_dtype=torch.bfloat16, reduce_dtype=torch.float32, buffer_dtype=torch.float32)
+    mixed_precision = MixedPrecision(param_dtype=torch.float16, reduce_dtype=torch.float32, buffer_dtype=torch.float32)
 
     fsdp_model = FSDP(
         actor_model,

@@ -62,7 +62,7 @@ def _get_base_transformer_config(hf_config: PretrainedConfig, dtype: torch.dtype
         # Data types
         "pipeline_dtype": dtype,
         "params_dtype": dtype,
-        "bf16": dtype is torch.bfloat16,
+        "bf16": dtype is torch.float16,
         # Parallel configuration
         "tensor_model_parallel_size": mpu.get_tensor_model_parallel_world_size(),
         "pipeline_model_parallel_size": mpu.get_pipeline_model_parallel_world_size(),

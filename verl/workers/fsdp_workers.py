@@ -213,12 +213,12 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         torch_dtype = fsdp_config.get("model_dtype", None)
         if torch_dtype is None:
-            torch_dtype = torch.float32 if self._is_actor else torch.bfloat16
+            torch_dtype = torch.float32 if self._is_actor else torch.float16
         else:
             torch_dtype = PrecisionType.to_dtype(torch_dtype)
 
         # override model kwargs
-        actor_model_config = AutoConfig.from_pretrained(local_path, trust_remote_code=trust_remote_code, attn_implementation="flash_attention_2")
+        actor_model_config = AutoConfig.from_pretrained(local_path, trust_remote_code=trust_remote_code, attn_implementation="sdpa")
 
         # patch for kimi-vl
         if getattr(actor_model_config, "model_type", None) == "kimi_vl":
@@ -302,7 +302,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             reduce_dtype = PrecisionType.to_dtype(mixed_precision_config.get("reduce_dtype", "fp32"))
             buffer_dtype = PrecisionType.to_dtype(mixed_precision_config.get("buffer_dtype", "fp32"))
         else:
-            param_dtype = torch.bfloat16
+            param_dtype = torch.float16
             reduce_dtype = torch.float32
             buffer_dtype = torch.float32
 
@@ -912,7 +912,7 @@ class CriticWorker(Worker, DistProfilerExtension):
 
         from transformers import AutoConfig
 
-        critic_model_config = AutoConfig.from_pretrained(local_path, attn_implementation="flash_attention_2", trust_remote_code=config.model.get("trust_remote_code", False))
+        critic_model_config = AutoConfig.from_pretrained(local_path, attn_implementation="sdpa", trust_remote_code=config.model.get("trust_remote_code", False))
         critic_model_config.num_labels = 1
         # patch for kimi-vl
         if getattr(critic_model_config, "model_type", None) == "kimi_vl":
@@ -972,7 +972,7 @@ class CriticWorker(Worker, DistProfilerExtension):
             reduce_dtype = PrecisionType.to_dtype(mixed_precision_config.get("reduce_dtype", "fp32"))
             buffer_dtype = PrecisionType.to_dtype(mixed_precision_config.get("buffer_dtype", "fp32"))
         else:
-            param_dtype = torch.bfloat16
+            param_dtype = torch.float16
             reduce_dtype = torch.float32
             buffer_dtype = torch.float32
 
@@ -1242,8 +1242,8 @@ class RewardModelWorker(Worker, DistProfilerExtension):
             reward_module = AutoModelForTokenClassification.from_pretrained(
                 pretrained_model_name_or_path=local_path,
                 config=model_config,
-                torch_dtype=torch.bfloat16,
-                attn_implementation="flash_attention_2",
+                torch_dtype=torch.float16,
+                attn_implementation="sdpa",
                 trust_remote_code=trust_remote_code,
             )
 
@@ -1253,7 +1253,7 @@ class RewardModelWorker(Worker, DistProfilerExtension):
                 ulysses_sp_size=self.ulysses_sequence_parallel_size,
             )
 
-            reward_module.to(torch.bfloat16)
+            reward_module.to(torch.float16)
 
         auto_wrap_policy = get_fsdp_wrap_policy(module=reward_module, config=self.config.model.fsdp_config)
 
@@ -1302,7 +1302,7 @@ class RewardModelWorker(Worker, DistProfilerExtension):
 
         from verl.utils.ulysses import gather_outpus_and_unpad, ulysses_pad_and_slice_inputs
 
-        with torch.no_grad(), torch.autocast(device_type=device_name, dtype=torch.bfloat16):
+        with torch.no_grad(), torch.autocast(device_type=device_name, dtype=torch.float16):
             input_ids = micro_batch["input_ids"]
             batch_size, seqlen = input_ids.shape
             attention_mask = micro_batch["attention_mask"]

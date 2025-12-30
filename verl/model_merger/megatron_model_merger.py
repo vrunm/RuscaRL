@@ -151,7 +151,7 @@ class MegatronModelMerger(BaseModelMerger):
         """
 
         # init hf config
-        tf_config = hf_to_mcore_config(self.hf_config, torch.bfloat16)
+        tf_config = hf_to_mcore_config(self.hf_config, torch.float16)
         tf_config.use_cpu_initialization = self.config.use_cpu_initialization
         tie_word_embeddings = getattr(self.hf_config, "tie_word_embeddings", False)
 

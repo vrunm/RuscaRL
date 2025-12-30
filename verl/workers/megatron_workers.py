@@ -342,7 +342,7 @@ class ActorRolloutRefWorker(MegatronWorker, DistProfilerExtension):
             override_transformer_config = OmegaConf.to_container(self.config.ref.megatron.get("override_transformer_config", OmegaConf.create()), resolve=True)
         else:
             override_transformer_config = None
-        self.param_dtype = torch.bfloat16
+        self.param_dtype = torch.float16
         log_gpu_memory_usage("Before init actor model and optimizer", logger=logger)
         self.dtype = PrecisionType.to_dtype(self.param_dtype)
         if self._is_actor or self._is_rollout:
@@ -726,7 +726,7 @@ class CriticWorker(MegatronWorker, DistProfilerExtension):
             importlib.import_module(self.config.model.external_lib)
         override_model_config = OmegaConf.to_container(self.config.model.get("override_config", OmegaConf.create()))
         override_transformer_config = OmegaConf.to_container(self.config.megatron.get("override_transformer_config", OmegaConf.create()), resolve=True)
-        self.param_dtype = torch.bfloat16
+        self.param_dtype = torch.float16
         self.dtype = PrecisionType.to_dtype(self.param_dtype)
         self.critic_module, self.critic_optimizer, self.critic_optimizer_scheduler, self.critic_model_config, critic_optimizer_config = self._build_critic_model_optimizer(
             model_path=self.config.model.path,
@@ -944,7 +944,7 @@ class RewardModelWorker(MegatronWorker, DistProfilerExtension):
             rm_tokenizer_local_path = copy_to_local(rm_tokenizer_path, use_shm=use_shm)
             rm_tokenizer = hf_tokenizer(rm_tokenizer_local_path, trust_remote_code=self.config.model.get("trust_remote_code", False))
 
-        self.param_dtype = torch.bfloat16
+        self.param_dtype = torch.float16
         self.dtype = PrecisionType.to_dtype(self.param_dtype)
 
         reward_model_module, reward_model_config = self._build_rm_model(

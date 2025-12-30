@@ -327,14 +327,14 @@ class RewardModelWorker(Worker):
         with init_context(), warnings.catch_warnings():
             warnings.simplefilter("ignore")
             model_config.classifier_dropout = 0.0
-            reward_module = AutoModelForTokenClassification.from_pretrained(pretrained_model_name_or_path=local_path, config=model_config, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2", trust_remote_code=trust_remote_code)
+            reward_module = AutoModelForTokenClassification.from_pretrained(pretrained_model_name_or_path=local_path, config=model_config, torch_dtype=torch.float16, attn_implementation="sdpa", trust_remote_code=trust_remote_code)
 
             if config.model.get("use_remove_padding", False) or self.ulysses_sequence_parallel_size > 1:
                 from verl.models.transformers.monkey_patch import apply_monkey_patch
 
                 apply_monkey_patch(model=reward_module, ulysses_sp_size=self.ulysses_sequence_parallel_size)
 
-            reward_module.to(torch.bfloat16)
+            reward_module.to(torch.float16)
 
         auto_wrap_policy = get_fsdp_wrap_policy(module=reward_module, config=self.config.model.fsdp_config)
 
@@ -367,7 +367,7 @@ class RewardModelWorker(Worker):
 
         from verl.utils.ulysses import gather_outpus_and_unpad, ulysses_pad_and_slice_inputs
 
-        with torch.no_grad(), torch.autocast(device_type=get_device_name(), dtype=torch.bfloat16):
+        with torch.no_grad(), torch.autocast(device_type=get_device_name(), dtype=torch.float16):
             input_ids = micro_batch["input_ids"]
             batch_size, seqlen = input_ids.shape
             attention_mask = micro_batch["attention_mask"]

@@ -95,7 +95,7 @@ def _hf_casual_fwd(config, sp_size, dp_size):
 
     # patch before load
     with torch.device("cuda"):
-        model = AutoModelForCausalLM.from_config(config=config, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
+        model = AutoModelForCausalLM.from_config(config=config, torch_dtype=torch.float16, attn_implementation="sdpa")
         apply_monkey_patch(model, sp_size)
         model = model.to(device="cuda")
         sync_model_parameters_global(model)
@@ -156,7 +156,7 @@ def _hf_casual_fwd_bwd(config, sp_size, dp_size):
 
     # patch before load
     with torch.device("cuda"):
-        model = AutoModelForCausalLM.from_config(config=config, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
+        model = AutoModelForCausalLM.from_config(config=config, torch_dtype=torch.float16, attn_implementation="sdpa")
         apply_monkey_patch(model, sp_size)
         model = model.to(device="cuda")
         sync_model_parameters_global(model)

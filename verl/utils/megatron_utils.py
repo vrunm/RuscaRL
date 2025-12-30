@@ -195,7 +195,7 @@ def convert_config(hf_config: PretrainedConfig, megatron_config) -> TransformerC
         attention_dropout=hf_config.attention_dropout,
         hidden_dropout=getattr(hf_config, "hidden_dropout", 0.0),
         add_qkv_bias=qkv_bias,
-        bf16=dt is torch.bfloat16,
+        bf16=dt is torch.float16,
     )
 
     return transformer_config
@@ -209,7 +209,7 @@ def init_megatron_optim_config(optim_config: Dict) -> OptimizerConfig:
         clip_grad=optim_config.get("clip_grad", 1.0),
         weight_decay=optim_config.get("weight_decay", 0.01),
         bf16=True,
-        params_dtype=torch.bfloat16,
+        params_dtype=torch.float16,
         use_distributed_optimizer=True,
     )
     return config

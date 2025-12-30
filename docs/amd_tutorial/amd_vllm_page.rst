@@ -78,7 +78,7 @@ Our investigation shows that ROCm may trigger an unexpected crash when attemptin
         enable_sleep_mode=True,
         tensor_parallel_size=tensor_parallel_size,
         distributed_executor_backend="external_launcher",
-        dtype=config.dtype,
+        dtype="auto",
         enforce_eager=config.enforce_eager,
         gpu_memory_utilization=config.gpu_memory_utilization,
         disable_custom_all_reduce=True,
